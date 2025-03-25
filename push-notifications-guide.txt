@@ -1,6 +1,6 @@
 Android push notification setup
 
-npm i --save @react-atuve-firebase/app 
+npm i --save @react-natuve-firebase/app 
 npm i --save @react-natuve-firebase/messaging 
 npx expo i expo-dev-client
 eas build --profile development --platform android 
