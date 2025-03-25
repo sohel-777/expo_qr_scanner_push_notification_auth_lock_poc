@@ -1,0 +1,291 @@
+Android push notification setup
+
+npm i --save @react-atuve-firebase/app 
+npm i --save @react-natuve-firebase/messaging 
+npx expo i expo-dev-client
+eas build --profile development --platform android 
+Press y and continue on the steps if it asks to login to your expo account then login 
+Create one account if you don't have any 
+After completing don't scan the qr code or download the build, we need to do few more changes first..
+Take the package name from app.json file from the android object 
+Next setup a firebase account
+Create a new project 
+Enter project name and other requirements then wait for it to create 
+Then click on the settings icon besides "project overview" top left side of the screen 
+Then click on project settings 
+Then click on service accounts
+Then generate a new private key, let it download automatically 
+Then place it in the root directory of your project 
+Now for uploading the downloaded json file to expo 
+Open a new terminal 
+Run eas credentials 
+Then select android 
+Then select product 
+Then select google service account 
+Then select the "manage your Google service accounts key for push notifications (FCM V1)" option 
+Then select "setup a google service account...
+Then select "upload a new service account key"
+Then it will automatically detect the downloaded service account json file if its located in the root directory 
+Then hit y
+If you hit "n" then you have to put the path of the downloaded json file (if its in the root just paste the name there)
+Thats it no need to do anything more 
+Now for verifying the uploaded json file visit expo.dev
+Login to your account 
+Then click and open the project 
+Then on the left side menu click on credentials 
+There click the android item
+There you can see your uploaded json file under "FCM V1 service account key" section 
+Now go to your firebase dashboard 
+Then click on project overview 
+Then click on android icon to add the android 
+Then get the package name from app.json from the android object 
+Paste the package name 
+You can give any nickname for the app
+Then for getting the SHA-1 KEY
+go back to a terminal (create a new terminal if you want)
+Run eas credentials 
+Android > development > keystore... > Setup a new keystore > y > y 
+Now we can see 2 SHA-1 fingerprint key
+Copy the first one and add in the firebase android setup page
+Then click on Register app
+Then next, next, continue to console 
+Then click on the settings icon besides project overview 
+Then project settings 
+Then in the general tab scroll down to the bottom for adding another SHA-1 key
+Get the second key from the terminal 
+Then download the google service json file (scroll a little bit up and you can see the button)
+Then put it in the root directory of your project 
+Then also we have to specify the path of the file in the android object in app.json file
+Like this 
+
+"android": {
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.sohel7.qrscaner"
+    },
+Now we have to add the listner codes in our ap for recieving notifications
+
+Your index file should have this listeners :
+
+import { Alert, Platform, PermissionsAndroid, Text, View } from "react-native";
+import messaging, {
+  FirebaseMessagingTypes,
+} from "@react-native-firebase/messaging";
+import { useEffect } from "react";
+
+messaging().setBackgroundMessageHandler(
+  async (remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
+    console.log("Background message received:", remoteMessage);
+  }
+);
+
+export default function HomeScreen() {
+  useEffect(() => {
+    console.log("HomeScreen mounted, checking permissions...");
+
+    const requestNotificationPermissionAndroid = async () => {
+      if (Platform.OS === "android" && Platform.Version >= 33) {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+          {
+            title: "Notification Permission",
+            message: "Allow this app to send you notifications?",
+            buttonNeutral: "Ask Me Later",
+            buttonNegative: "Deny",
+            buttonPositive: "Allow",
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      }
+      return true;
+    };
+
+    const requestUserPermission = async () => {
+      const androidGranted = await requestNotificationPermissionAndroid();
+      if (!androidGranted) {
+        console.log("Android notification permission denied");
+        Alert.alert(
+          "Permission Denied",
+          "Please enable notifications in Settings."
+        );
+        return false;
+      }
+      const authStatus = await messaging().requestPermission();
+      console.log("Raw authStatus:", authStatus);
+      const enabled =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      if (enabled) {
+        console.log("Full permissions granted");
+      } else {
+        console.log("Permissions denied");
+        Alert.alert(
+          "Permission Denied",
+          "Please enable notifications in Settings."
+        );
+      }
+      return enabled;
+    };
+
+    const checkAndRequestPermission = async () => {
+      const hasPermission = await messaging().hasPermission();
+      console.log("Current permission status:", hasPermission);
+
+      if (
+        hasPermission === messaging.AuthorizationStatus.NOT_DETERMINED ||
+        hasPermission === messaging.AuthorizationStatus.DENIED
+      ) {
+        console.log("Requesting permission...");
+        await requestUserPermission().then((enabled) => {
+          if (enabled) {
+            messaging()
+              .getToken()
+              .then((token) => {
+                console.log("FCM Token:", token);
+                Alert.alert("Permission granted, token is:", token);
+              })
+              .catch((error) => console.error("Error fetching token:", error));
+          }
+        });
+      } else if (hasPermission === messaging.AuthorizationStatus.AUTHORIZED) {
+        console.log("Permissions already fully authorized");
+        messaging()
+          .getToken()
+          .then((token) =>
+            console.log("FCM Token (already authorized):", token)
+          );
+      }
+    };
+
+    checkAndRequestPermission();
+
+    // Notification handlers...
+    messaging()
+      .getInitialNotification()
+      .then((initialNotification) => {
+        if (initialNotification) {
+          Alert.alert(
+            "Initial notification:",
+            JSON.stringify(initialNotification.notification)
+          );
+        }
+      });
+
+    const unsubscribeOnOpened = messaging().onNotificationOpenedApp(
+      (remoteMessage) => {
+        Alert.alert(
+          "Notification opened from background:",
+          JSON.stringify(remoteMessage.notification)
+        );
+      }
+    );
+
+    const unsubscribeOnMessage = messaging().onMessage(
+      async (remoteMessage) => {
+        Alert.alert("Foreground message:", JSON.stringify(remoteMessage));
+      }
+    );
+
+    return () => {
+      unsubscribeOnOpened();
+      unsubscribeOnMessage();
+    };
+  }, []);
+
+  return (
+    <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <Text>Home Screen</Text>
+    </View>
+  );
+}
+And app.json like this:
+
+{
+  "expo": {
+    "name": "qr-scaner",
+    "slug": "qr-scaner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "myapp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "ios": {
+      "supportsTablet": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "bundleIdentifier": "com.sohel7.qrscaner"
+    },
+    "android": {
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.sohel7.qrscaner",
+      "permissions": ["android.permission.POST_NOTIFICATIONS"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "@react-native-firebase/app",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          },
+          "android": {
+            "targetSdkVersion": 34
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "de02857e-5b5c-4f6e-9996-839df42a821e"
+      }
+    }
+  }
+}
+Now build the app with the latest codes for testing
+run eas build --profile preview --platform android
+here we can give the profile ( development / preview/production ) we want to create the build for
+Let it build
+then scan the qr code for downloading the build or go to the link for downloading 
+Now for testing we have to send notifications from firebase
+navigate to firebase the on the left menu under run section click on "messaging"
+then create a new campaign notification
+give the title and text body 
+hit next
+in the target section select your app
+set the Scheduling to now
+then review and publish
+
+And we are done wait for sometime to get the notification.
+
+References :
+[https://www.youtube.com/watch?v=yCBecuxzUuU]
+[https://expo.dev]
+[https://console.firebase.google.com/]
